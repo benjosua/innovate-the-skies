@@ -5,6 +5,9 @@ export default defineConfig({
   srcDir: 'src',
   vite: () => ({
     plugins: [svelte()],
+    server: {
+      port: 3000,
+    },
   }),
   manifest: {
     permissions: ['sidePanel', 'scripting', 'activeTab', 'storage'],
