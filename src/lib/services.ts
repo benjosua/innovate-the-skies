@@ -10,6 +10,21 @@ function getGoogleProvider() {
   return createGoogleGenerativeAI({ apiKey: GEMINI_API_KEY });
 }
 
+export async function generateInterestSummary(interests: { label: string; count: number }[]): Promise<string> {
+  console.log('[Gemini] Generating interest summary for', interests.length, 'interests');
+  const google = getGoogleProvider();
+
+  const { text } = await generateText({
+    model: google('gemini-2.0-flash'),
+    prompt: `Based on these hover interactions a user made on the Lufthansa Explore page, write a concise 2-3 sentence traveler profile summary.
+Interests (label: hover count): ${interests.map(i => `${i.label} (${i.count})`).join(', ')}.
+Describe what kind of traveler they seem to be, what destinations or experiences interest them, and what kind of trip to recommend. Be specific and insightful. Plain text only, no markdown.`,
+  });
+
+  console.log('[Gemini] Summary:', text);
+  return text;
+}
+
 export async function getLufthansaAuthToken(): Promise<string> {
   console.log('[LH Auth] Requesting OAuth token...');
   const body = new URLSearchParams({
@@ -45,9 +60,19 @@ export interface EventRecommendation {
 
 export async function getGeminiEventRecommendation(
   preferences: string[],
+  dateFrom?: string,
+  dateTo?: string,
 ): Promise<EventRecommendation> {
-  console.log('[Gemini] Finding event for preferences:', preferences);
+  console.log('[Gemini] Finding event for preferences:', preferences, '| range:', dateFrom, '→', dateTo);
   const google = getGoogleProvider();
+
+  const dateConstraint = dateFrom && dateTo
+    ? `The event MUST take place between ${dateFrom} and ${dateTo}.`
+    : dateFrom
+    ? `The event MUST take place on or after ${dateFrom}.`
+    : dateTo
+    ? `The event MUST take place on or before ${dateTo}.`
+    : 'The event should be coming up soon (within the next 3 months).';
 
   const { text } = await generateText({
     model: google('gemini-2.0-flash'),
@@ -56,6 +81,7 @@ export async function getGeminiEventRecommendation(
     },
     prompt: `The user is looking to travel and has been browsing these topics: ${preferences.join(', ')}.
 Using Google Search, find ONE major upcoming event (concert, festival, sports match) related to these interests in a major European or global city.
+${dateConstraint}
 
 Return ONLY a raw JSON object with no markdown formatting or backticks. The JSON must have the following keys:
 - "destinationAirport": 3-letter IATA code of the nearest major airport to the event.

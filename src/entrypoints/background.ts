@@ -2,6 +2,7 @@ import {
   getLufthansaAuthToken,
   getGeminiEventRecommendation,
   getScheduledFlights,
+  generateInterestSummary,
 } from '../lib/services';
 
 export interface HoverRecord {
@@ -52,6 +53,31 @@ export default defineBackground(() => {
       return true;
     }
 
+    if (message?.type === 'GENERATE_SUMMARY') {
+      (async () => {
+        try {
+          const result = await chrome.storage.local.get(STORAGE_KEY);
+          const prefs: HoverPrefs = result[STORAGE_KEY] ?? {};
+          const interests = Object.values(prefs)
+            .sort((a, b) => b.count - a.count)
+            .map((p) => ({ label: p.label, count: p.count }));
+
+          if (interests.length === 0) {
+            sendResponse({ success: true, summary: 'No browsing data yet — visit the Lufthansa Explore page to build your profile.' });
+            return;
+          }
+
+          const summary = await generateInterestSummary(interests);
+          sendResponse({ success: true, summary });
+        } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : String(error);
+          console.error('[Summary] Error:', msg);
+          sendResponse({ success: false, error: msg });
+        }
+      })();
+      return true;
+    }
+
     if (message?.type === 'TRIGGER_RECOMMENDATIONS') {
       (async () => {
         try {
@@ -73,7 +99,11 @@ export default defineBackground(() => {
 
           console.log('[Pipeline] Step 2: Gemini event search...');
           chrome.runtime.sendMessage({ type: 'PIPELINE_STATUS', status: `Finding real-time events for: ${topInterests.join(', ')}...` });
-          const eventData = await getGeminiEventRecommendation(topInterests);
+          const eventData = await getGeminiEventRecommendation(
+            topInterests,
+            message.dateFrom as string | undefined,
+            message.dateTo as string | undefined,
+          );
           console.log('[Pipeline] Event found:', eventData);
 
           console.log('[Pipeline] Step 3: Lufthansa auth + flight status lookup...');
