@@ -1,3 +1,9 @@
+import {
+  getLufthansaAuthToken,
+  getGeminiEventRecommendation,
+  getScheduledFlights,
+} from '../lib/services';
+
 export interface HoverRecord {
   label: string;
   count: number;
@@ -43,7 +49,47 @@ export default defineBackground(() => {
           console.error('[Innovate the Skies] Failed to record hover', err);
           sendResponse({ ok: false });
         });
-      // Return true to keep the message channel open for the async response
+      return true;
+    }
+
+    if (message?.type === 'TRIGGER_RECOMMENDATIONS') {
+      (async () => {
+        try {
+          console.log('[Pipeline] Step 1: Loading hover preferences...');
+          chrome.runtime.sendMessage({ type: 'PIPELINE_STATUS', status: 'Analyzing your recent interests...' });
+
+          const result = await chrome.storage.local.get(STORAGE_KEY);
+          const prefs: HoverPrefs = result[STORAGE_KEY] ?? {};
+          const allInterests = Object.values(prefs).sort((a, b) => b.count - a.count);
+          console.log('[Pipeline] All tracked interests:', allInterests);
+
+          const topInterests = allInterests.slice(0, 5).map((p) => p.label);
+          if (topInterests.length === 0) {
+            topInterests.push('Adventure', 'City breaks');
+            console.log('[Pipeline] No interests found, using defaults.');
+          } else {
+            console.log('[Pipeline] Top interests:', topInterests);
+          }
+
+          console.log('[Pipeline] Step 2: Gemini event search...');
+          chrome.runtime.sendMessage({ type: 'PIPELINE_STATUS', status: `Finding real-time events for: ${topInterests.join(', ')}...` });
+          const eventData = await getGeminiEventRecommendation(topInterests);
+          console.log('[Pipeline] Event found:', eventData);
+
+          console.log('[Pipeline] Step 3: Lufthansa auth + flight status lookup...');
+          chrome.runtime.sendMessage({ type: 'PIPELINE_STATUS', status: `Checking Lufthansa flights FRA → ${eventData.destinationAirport} on ${eventData.flightDate}...` });
+          const lhToken = await getLufthansaAuthToken();
+          const flights = await getScheduledFlights(lhToken, 'FRA', eventData.destinationAirport, eventData.flightDate);
+          console.log(`[Pipeline] Flights retrieved: ${flights.length}`);
+
+          console.log('[Pipeline] Done. Sending structured data to UI.');
+          sendResponse({ success: true, eventData, flights });
+        } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : String(error);
+          console.error('[Pipeline] Error:', msg, error);
+          sendResponse({ success: false, error: msg });
+        }
+      })();
       return true;
     }
   });

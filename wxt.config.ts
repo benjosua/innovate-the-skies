@@ -18,6 +18,10 @@ export default defineConfig({
   }),
   manifest: {
     permissions: ['sidePanel', 'scripting', 'activeTab', 'storage'],
+    host_permissions: [
+      'https://api.lufthansa.com/*',
+      'https://generativelanguage.googleapis.com/*',
+    ],
     action: {
       default_title: 'Open Innovate the Skies',
     },
