@@ -1,0 +1,16 @@
+{
+  "name": "Innovate the Skies",
+  "version": "1.0.0",
+  "description": "Svelte browser extension built with WXT",
+  "manifest_version": 3,
+  "permissions": ["sidePanel"],
+  "commands": {
+    "open-sidepanel": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+Y",
+        "mac": "Command+Shift+Y"
+      },
+      "description": "Open the side panel"
+    }
+  }
+}
