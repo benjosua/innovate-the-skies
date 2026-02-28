@@ -114,6 +114,17 @@ export interface FlightOption {
   duration: string;        // e.g. "2h 50m"
   stops: number;
   legs: FlightLeg[];
+  price: number;           // simulated EUR price (Schedules API has no fare data)
+}
+
+// Generates a stable illustrative price from the flight number.
+// Direct: €130–249 · Connecting: €95–214
+function simulatePrice(legs: FlightLeg[], stops: number): number {
+  const seed = legs[0].flightNumber
+    .split('')
+    .reduce((sum, c) => sum + c.charCodeAt(0), 0);
+  const base = stops === 0 ? 130 : 95;
+  return base + (seed % 120);
 }
 
 function parseDuration(iso: string): string {
@@ -174,7 +185,7 @@ export async function getScheduledFlights(
 
     console.log(`  ${stops === 0 ? 'Direct' : `${stops} stop`} | ${duration} | ${legs.map(l => `${l.flightNumber} ${l.origin}${l.departure}→${l.destination}${l.arrival}`).join(' + ')}`);
 
-    return { duration, stops, legs };
+    return { duration, stops, legs, price: simulatePrice(legs, stops) };
   });
 
   // Sort: direct flights first, then by total duration
