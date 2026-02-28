@@ -1,7 +1,10 @@
+import { google } from "npm:@ai-sdk/google";
+import { generateText } from "npm:ai";
+
 const API_KEY = Deno.env.get("LH_CLIENT_ID") || "YOUR_CLIENT_ID";
 const API_SECRET = Deno.env.get("LH_CLIENT_SECRET") || "YOUR_CLIENT_SECRET";
 const BASE_URL = "https://api.lufthansa.com/v1";
-const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") || "YOUR_GEMINI_API_KEY";
+// GOOGLE_GENERATIVE_AI_API_KEY is read automatically by @ai-sdk/google
 
 // --- Types ---
 
@@ -11,11 +14,6 @@ interface EventResult {
   venue: string;
   description: string;
   ticketUrl?: string;
-}
-
-interface GroundingSource {
-  title: string;
-  url: string;
 }
 
 // 1a. Public API token (for flight schedules & status)
@@ -172,14 +170,13 @@ async function getCityName(token: string, airportCode: string): Promise<string> 
   return names?.["$"] ?? airportCode;
 }
 
-// 6. Search for events at the flight destination using Gemini + Google Search grounding
+// 6. Search for events at the flight destination using @ai-sdk/google + Google Search grounding
 //
 //  destinationAirport  — IATA code of the arrival airport (e.g. "MUC")
 //  eventPreferences    — what the user enjoys (e.g. ["rock concerts", "live music"])
 async function searchDestinationEvents(
   lhToken: string,
   destinationAirport: string,
-
   eventPreferences: string[],
 ): Promise<void> {
   console.log(
@@ -196,30 +193,13 @@ async function searchDestinationEvents(
     `{ "title": string, "date": string, "venue": string, "description": string, "ticketUrl": string | null }\n\n` +
     `Only include real, confirmed events with known dates. If none are found, return an empty array [].`;
 
-  const geminiRes = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        tools: [{ google_search: {} }],
-      }),
+  const { text: rawText, sources } = await generateText({
+    model: google("gemini-2.0-flash"),
+    tools: {
+      google_search: google.tools.googleSearch({}),
     },
-  );
-
-  if (!geminiRes.ok) {
-    console.log(`⚠️  Gemini API error ${geminiRes.status}: ${await geminiRes.text()}`);
-    return;
-  }
-
-  const geminiData = await geminiRes.json();
-  const candidate = geminiData?.candidates?.[0];
-  const rawText: string = candidate?.content?.parts?.[0]?.text ?? "";
-
-  const sources: GroundingSource[] = (candidate?.groundingMetadata?.groundingChunks ?? [])
-    .map((chunk: any) => ({ title: chunk.web?.title ?? "", url: chunk.web?.uri ?? "" }))
-    .filter((s: GroundingSource) => s.url);
+    prompt,
+  });
 
   // Extract the JSON array from the model output (grounding may add surrounding text)
   const jsonMatch = rawText.match(/\[[\s\S]*\]/);
@@ -246,10 +226,10 @@ async function searchDestinationEvents(
     }
   }
 
-  if (sources.length > 0) {
+  if (sources && sources.length > 0) {
     console.log(`🔍 Grounded search sources:`);
     for (const src of sources.slice(0, 5)) {
-      console.log(`  • ${src.title}: ${src.url}`);
+      console.log(`  • ${src.title ?? src.url}: ${src.url}`);
     }
   }
 }
