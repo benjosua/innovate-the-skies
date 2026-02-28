@@ -16,6 +16,7 @@
     eventDate: string;
     eventDescription: string;
     flightDate: string;
+    eventUrl: string;
   }
 
   interface FlightLeg {
@@ -172,6 +173,16 @@
             <span class="font-medium text-gray-700">{eventData.destinationAirport}</span>
           </div>
           <p class="text-sm text-gray-600">{eventData.eventDescription}</p>
+          {#if eventData.eventUrl}
+            <a
+              href={eventData.eventUrl}
+              target="_blank"
+              rel="noreferrer"
+              class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:underline"
+            >
+              🔗 View event
+            </a>
+          {/if}
         </div>
       </section>
 

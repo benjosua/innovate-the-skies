@@ -62,7 +62,8 @@ Return ONLY a raw JSON object with no markdown formatting or backticks. The JSON
 - "eventName": Name of the event.
 - "eventDate": Date of the event (YYYY-MM-DD).
 - "eventDescription": Short 1-sentence description.
-- "flightDate": A recommended departure date 1-2 days before the event (YYYY-MM-DD).`,
+- "flightDate": A recommended departure date 1-2 days before the event (YYYY-MM-DD).
+- "eventUrl": A direct URL to the official event page or the best available ticketing/info page.`,
   });
 
   console.log('[Gemini] Raw event response:', text);
