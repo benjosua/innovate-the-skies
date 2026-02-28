@@ -87,36 +87,48 @@ export default defineBackground(() => {
           const result = await chrome.storage.local.get(STORAGE_KEY);
           const prefs: HoverPrefs = result[STORAGE_KEY] ?? {};
           const allInterests = Object.values(prefs).sort((a, b) => b.count - a.count);
-          console.log('[Pipeline] All tracked interests:', allInterests);
 
           const topInterests = allInterests.slice(0, 5).map((p) => p.label);
           if (topInterests.length === 0) {
             topInterests.push('Adventure', 'City breaks');
-            console.log('[Pipeline] No interests found, using defaults.');
-          } else {
-            console.log('[Pipeline] Top interests:', topInterests);
           }
+          console.log('[Pipeline] Top interests:', topInterests);
 
-          console.log('[Pipeline] Step 2: Gemini event search...');
-          chrome.runtime.sendMessage({ type: 'PIPELINE_STATUS', status: `Finding real-time events for: ${topInterests.join(', ')}...` });
-          const eventData = await getGeminiEventRecommendation(
-            topInterests,
-            message.dateFrom as string | undefined,
-            message.dateTo as string | undefined,
-          );
-          console.log('[Pipeline] Event found:', eventData);
+          console.log('[Pipeline] Step 2: Fetching 3 event options in parallel...');
+          chrome.runtime.sendMessage({ type: 'PIPELINE_STATUS', status: `Finding 3 event options for: ${topInterests.join(', ')}...` });
 
-          console.log('[Pipeline] Step 3: Lufthansa auth + flight status lookup...');
-          chrome.runtime.sendMessage({ type: 'PIPELINE_STATUS', status: `Checking Lufthansa flights FRA → ${eventData.destinationAirport} on ${eventData.flightDate}...` });
-          const lhToken = await getLufthansaAuthToken();
-          const flights = await getScheduledFlights(lhToken, 'FRA', eventData.destinationAirport, eventData.flightDate);
-          console.log(`[Pipeline] Flights retrieved: ${flights.length}`);
+          const events = await Promise.all([
+            getGeminiEventRecommendation(topInterests, message.dateFrom as string | undefined, message.dateTo as string | undefined),
+            getGeminiEventRecommendation(topInterests, message.dateFrom as string | undefined, message.dateTo as string | undefined),
+            getGeminiEventRecommendation(topInterests, message.dateFrom as string | undefined, message.dateTo as string | undefined),
+          ]);
 
-          console.log('[Pipeline] Done. Sending structured data to UI.');
-          sendResponse({ success: true, eventData, flights });
+          console.log('[Pipeline] Events found:', events.map(e => e.eventName));
+          sendResponse({ success: true, events });
         } catch (error: unknown) {
           const msg = error instanceof Error ? error.message : String(error);
           console.error('[Pipeline] Error:', msg, error);
+          sendResponse({ success: false, error: msg });
+        }
+      })();
+      return true;
+    }
+
+    if (message?.type === 'GET_FLIGHTS_FOR_EVENT') {
+      (async () => {
+        try {
+          const eventData = message.eventData as { destinationAirport: string; flightDate: string };
+          console.log(`[Flights] FRA → ${eventData.destinationAirport} on ${eventData.flightDate}`);
+          chrome.runtime.sendMessage({ type: 'PIPELINE_STATUS', status: `Checking Lufthansa flights FRA → ${eventData.destinationAirport}...` });
+
+          const lhToken = await getLufthansaAuthToken();
+          const flights = await getScheduledFlights(lhToken, 'FRA', eventData.destinationAirport, eventData.flightDate);
+          console.log(`[Flights] ${flights.length} flight(s) found`);
+
+          sendResponse({ success: true, flights });
+        } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : String(error);
+          console.error('[Flights] Error:', msg, error);
           sendResponse({ success: false, error: msg });
         }
       })();

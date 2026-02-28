@@ -17,6 +17,7 @@
   import Clock from '@lucide/svelte/icons/clock';
   import ChevronRight from '@lucide/svelte/icons/chevron-right';
   import Sparkles from '@lucide/svelte/icons/sparkles';
+  import X from '@lucide/svelte/icons/x';
 
   interface HoverRecord {
     label: string;
@@ -63,6 +64,9 @@
   let eventData = $state<EventData | null>(null);
   let flights = $state<FlightOption[]>([]);
   let errorMsg = $state('');
+  let events = $state<EventData[]>([]);
+  let currentEventIdx = $state(0);
+  let flightsLoading = $state(false);
   let selectedFlight = $state<number | null>(null);
 
   // --- interest summary ---
@@ -86,6 +90,8 @@
   const hasOnlyConnecting = $derived(directFlights.length === 0 && flights.length > 0);
   const highestPrice = $derived(baseFlights.length ? Math.max(...baseFlights.map(f => f.price)) : 9999);
   const displayedFlights = $derived(baseFlights.filter(f => f.price <= maxPrice));
+  const currentEvent = $derived(events[currentEventIdx] ?? null);
+  const hasMoreEvents = $derived(currentEventIdx < events.length - 1);
 
   const steps = ['Discover', 'Results', 'Book'];
 
@@ -125,6 +131,8 @@
     pipelineLoading = true;
     eventData = null;
     flights = [];
+    events = [];
+    currentEventIdx = 0;
     errorMsg = '';
     selectedFlight = null;
     statusMessage = 'Starting event discovery engine...';
@@ -138,13 +146,47 @@
       (response) => {
         pipelineLoading = false;
         if (response?.success) {
-          eventData = response.eventData;
-          flights = response.flights;
+          events = response.events;
+          currentEventIdx = 0;
           statusMessage = '';
+        } else {
+          errorMsg = response?.error ?? 'Failed to generate recommendations.';
+          statusMessage = '';
+        }
+      }
+    );
+  }
+
+  function dismissEvent() {
+    if (hasMoreEvents) {
+      currentEventIdx++;
+    } else {
+      events = [];
+      currentEventIdx = 0;
+    }
+  }
+
+  function selectEventAndGetFlights() {
+    if (!currentEvent) return;
+    eventData = currentEvent;
+    flightsLoading = true;
+    flights = [];
+    errorMsg = '';
+    selectedFlight = null;
+    maxPrice = 9999;
+    statusMessage = `Checking Lufthansa flights FRA → ${currentEvent.destinationAirport}...`;
+
+    chrome.runtime.sendMessage(
+      { type: 'GET_FLIGHTS_FOR_EVENT', eventData: currentEvent },
+      (response) => {
+        flightsLoading = false;
+        statusMessage = '';
+        if (response?.success) {
+          flights = response.flights;
+          events = [];
           step = 1;
         } else {
-          errorMsg = response?.error ?? 'Failed to generate recommendation.';
-          statusMessage = '';
+          errorMsg = response?.error ?? 'Failed to load flights.';
         }
       }
     );
@@ -166,6 +208,8 @@
     flights = [];
     errorMsg = '';
     selectedFlight = null;
+    events = [];
+    currentEventIdx = 0;
   }
 
   function formatDateValue(d: DateValue | undefined) {
@@ -372,7 +416,7 @@
       <!-- CTA -->
       <button
         onclick={getRecommendations}
-        disabled={pipelineLoading}
+        disabled={pipelineLoading || flightsLoading}
         class="w-full rounded-2xl bg-[#ffaa00] py-4 text-sm font-bold text-[#05164d] shadow-lg transition-all hover:bg-[#e69900] active:scale-[0.98] disabled:opacity-60 flex items-center justify-center gap-2"
       >
         {#if pipelineLoading}
@@ -384,8 +428,68 @@
         {/if}
       </button>
 
+      <!-- Event browsing cards -->
+      {#if currentEvent && !pipelineLoading}
+        <div class="relative rounded-2xl overflow-hidden shadow-md border border-gray-100">
+          <!-- Counter -->
+          <div class="absolute top-3 left-4 z-10">
+            <span class="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold text-white">{currentEventIdx + 1} / {events.length}</span>
+          </div>
+          <!-- Dismiss button -->
+          <button
+            onclick={dismissEvent}
+            class="absolute top-2.5 right-3 z-10 rounded-full bg-white/20 p-1.5 hover:bg-white/30 transition-colors"
+            aria-label="Skip this event"
+          >
+            <X class="h-4 w-4 text-white" />
+          </button>
+          <!-- Card header -->
+          <div class="bg-gradient-to-br from-[#05164d] to-[#0a2d7a] px-4 pt-9 pb-5 relative overflow-hidden">
+            <Plane class="absolute -right-3 -bottom-3 h-20 w-20 text-white/5 rotate-12" />
+            <p class="text-[9px] font-bold uppercase tracking-widest text-[#ffaa00] mb-1">AI Recommended Event</p>
+            <h3 class="text-base font-bold text-white leading-tight">{currentEvent.eventName}</h3>
+            <div class="mt-2 flex flex-wrap gap-2">
+              <span class="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-medium text-blue-100">
+                <CalendarIcon class="h-2.5 w-2.5" />
+                {formatIsoDate(currentEvent.eventDate)}
+              </span>
+              <span class="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-1 text-[10px] font-medium text-blue-100">
+                <MapPin class="h-2.5 w-2.5" />
+                {currentEvent.destinationAirport}
+              </span>
+            </div>
+          </div>
+          <!-- Card body -->
+          <div class="bg-white px-4 py-3 space-y-2">
+            <p class="text-xs text-gray-500 leading-relaxed">{currentEvent.eventDescription}</p>
+            {#if currentEvent.eventUrl}
+              <a href={currentEvent.eventUrl} target="_blank" rel="noreferrer" class="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800 transition-colors">
+                View event details
+                <ExternalLink class="h-3 w-3" />
+              </a>
+            {/if}
+            <button
+              onclick={selectEventAndGetFlights}
+              disabled={flightsLoading}
+              class="w-full rounded-xl bg-[#ffaa00] py-2.5 text-xs font-bold text-[#05164d] flex items-center justify-center gap-2 hover:bg-[#e69900] active:scale-[0.98] transition-all disabled:opacity-60"
+            >
+              {#if flightsLoading}
+                <Loader2 class="h-3.5 w-3.5 animate-spin" />
+                Loading flights…
+              {:else}
+                <Plane class="h-3.5 w-3.5" />
+                Find Flights for This Event
+              {/if}
+            </button>
+            {#if !hasMoreEvents}
+              <p class="text-center text-[10px] text-gray-400">Last suggestion — dismiss to start over</p>
+            {/if}
+          </div>
+        </div>
+      {/if}
+
       <!-- Loading state -->
-      {#if pipelineLoading}
+      {#if pipelineLoading || flightsLoading}
         <div class="rounded-2xl border border-blue-100 bg-white p-4 shadow-sm space-y-3">
           <div class="flex items-center gap-3">
             <div class="h-5 w-5 shrink-0 animate-spin rounded-full border-[3px] border-[#05164d] border-t-[#ffaa00]"></div>
@@ -393,7 +497,7 @@
           </div>
           <!-- Skeleton steps -->
           <div class="space-y-2 pl-8">
-            {#each ['Scanning your interests', 'Finding matching events', 'Checking Lufthansa flights'] as hint, i}
+            {#each (pipelineLoading ? ['Scanning your interests', 'Finding 3 matching events', 'Preparing suggestions'] : ['Connecting to Lufthansa', 'Checking available flights', 'Sorting results']) as hint, i}
               <div class="flex items-center gap-2 text-[10px] text-gray-400">
                 <div class="h-1.5 w-1.5 rounded-full {i === 0 ? 'bg-[#ffaa00] animate-pulse' : 'bg-gray-200'}"></div>
                 {hint}
