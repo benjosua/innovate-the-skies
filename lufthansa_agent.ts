@@ -1,6 +1,22 @@
 const API_KEY = Deno.env.get("LH_CLIENT_ID") || "YOUR_CLIENT_ID";
 const API_SECRET = Deno.env.get("LH_CLIENT_SECRET") || "YOUR_CLIENT_SECRET";
 const BASE_URL = "https://api.lufthansa.com/v1";
+const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") || "YOUR_GEMINI_API_KEY";
+
+// --- Types ---
+
+interface EventResult {
+  title: string;
+  date: string;
+  venue: string;
+  description: string;
+  ticketUrl?: string;
+}
+
+interface GroundingSource {
+  title: string;
+  url: string;
+}
 
 // 1a. Public API token (for flight schedules & status)
 async function getAuthToken(): Promise<string> {
@@ -136,6 +152,108 @@ Best regards,
   console.log(emailTemplate);
 }
 
+// 5. Resolve IATA airport code → English city name via LH Reference Data API
+async function getCityName(token: string, airportCode: string): Promise<string> {
+  const url = `${BASE_URL}/mds-references/airports/${airportCode}?lang=EN`;
+  const response = await fetch(url, {
+    headers: { "Authorization": `Bearer ${token}`, "Accept": "application/json" },
+  });
+  if (!response.ok) return airportCode;
+
+  const data = await response.json();
+  const airport = data?.AirportResource?.Airports?.Airport;
+  if (!airport) return airportCode;
+
+  const names = airport.Names?.Name;
+  if (Array.isArray(names)) {
+    const en = names.find((n: any) => n["@LanguageCode"] === "EN");
+    return en?.["$"] ?? airportCode;
+  }
+  return names?.["$"] ?? airportCode;
+}
+
+// 6. Search for events at the flight destination using Gemini + Google Search grounding
+//
+//  destinationAirport  — IATA code of the arrival airport (e.g. "MUC")
+//  eventPreferences    — what the user enjoys (e.g. ["rock concerts", "live music"])
+async function searchDestinationEvents(
+  lhToken: string,
+  destinationAirport: string,
+
+  eventPreferences: string[],
+): Promise<void> {
+  console.log(
+    `\n🎵 [EVENT SEARCH] Looking for events at ${destinationAirport}...`,
+  );
+
+  const cityName = await getCityName(lhToken, destinationAirport);
+  console.log(`📍 Destination resolved: ${cityName} (${destinationAirport})`);
+
+  const prefs = eventPreferences.join(", ");
+  const prompt =
+    `Search for upcoming ${prefs} events in ${cityName} happening. ` +
+    `Return ONLY a JSON array — no surrounding text — where each element has these fields:\n` +
+    `{ "title": string, "date": string, "venue": string, "description": string, "ticketUrl": string | null }\n\n` +
+    `Only include real, confirmed events with known dates. If none are found, return an empty array [].`;
+
+  const geminiRes = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        tools: [{ google_search: {} }],
+      }),
+    },
+  );
+
+  if (!geminiRes.ok) {
+    console.log(`⚠️  Gemini API error ${geminiRes.status}: ${await geminiRes.text()}`);
+    return;
+  }
+
+  const geminiData = await geminiRes.json();
+  const candidate = geminiData?.candidates?.[0];
+  const rawText: string = candidate?.content?.parts?.[0]?.text ?? "";
+
+  const sources: GroundingSource[] = (candidate?.groundingMetadata?.groundingChunks ?? [])
+    .map((chunk: any) => ({ title: chunk.web?.title ?? "", url: chunk.web?.uri ?? "" }))
+    .filter((s: GroundingSource) => s.url);
+
+  // Extract the JSON array from the model output (grounding may add surrounding text)
+  const jsonMatch = rawText.match(/\[[\s\S]*\]/);
+  let events: EventResult[] = [];
+  if (jsonMatch) {
+    try {
+      events = JSON.parse(jsonMatch[0]);
+    } catch {
+      // non-JSON fallback below
+    }
+  }
+
+  if (events.length === 0) {
+    console.log(`\n📋 Event summary:\n${rawText}`);
+  } else {
+    console.log(`\n🎉 Found ${events.length} event(s) in ${cityName}:\n`);
+    for (const ev of events) {
+      console.log(`  🎫 ${ev.title}`);
+      console.log(`     📅 ${ev.date}`);
+      console.log(`     📍 ${ev.venue}`);
+      if (ev.description) console.log(`     📝 ${ev.description}`);
+      if (ev.ticketUrl)   console.log(`     🔗 ${ev.ticketUrl}`);
+      console.log();
+    }
+  }
+
+  if (sources.length > 0) {
+    console.log(`🔍 Grounded search sources:`);
+    for (const src of sources.slice(0, 5)) {
+      console.log(`  • ${src.title}: ${src.url}`);
+    }
+  }
+}
+
 // Main Execution Flow
 async function main() {
   try {
@@ -156,6 +274,19 @@ async function main() {
     for (const flight of fraBerDelayed) {
       await checkFlightStatusAndClaim(publicToken, flight, today);
     }
+
+
+
+
+
+
+    // --- EVENT SEARCH: Find matching events at the flight destination ---
+    // Customise destinationAirport, and eventPreferences to match the user's trip.
+    await searchDestinationEvents(
+      publicToken,
+      "MUC",           // destination airport (IATA code from the flight)
+      ["rock concerts", "live music festivals"],  // user's event preferences
+    );
 
   } catch (error) {
     console.error("Error running Agent:", error);
