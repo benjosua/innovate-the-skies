@@ -1,10 +1,17 @@
 import { defineConfig } from 'wxt';
-import { svelte } from '@sveltejs/vite-plugin-svelte';
+import tailwindcss from '@tailwindcss/vite';
+import path from 'path';
 
 export default defineConfig({
   srcDir: 'src',
+  modules: ['@wxt-dev/module-svelte'],
   vite: () => ({
-    plugins: [svelte()],
+    plugins: [tailwindcss()],
+    resolve: {
+      alias: {
+        $lib: path.resolve('./src/lib'),
+      },
+    },
     server: {
       port: 3000,
     },

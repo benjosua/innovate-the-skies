@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import './app.css';
+  import { Button } from '$lib/components/ui/button/index.js';
 
   interface HoverRecord {
     label: string;
@@ -8,8 +9,8 @@
     lastSeen: number;
   }
 
-  let preferences: HoverRecord[] = [];
-  let loading = true;
+  let preferences = $state<HoverRecord[]>([]);
+  let loading = $state(true);
 
   async function loadPreferences() {
     loading = true;
@@ -32,9 +33,8 @@
     });
   }
 
-  onMount(() => {
+  $effect(() => {
     loadPreferences();
-    // Live-update whenever storage changes (e.g. while browsing the LH page)
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area === 'local' && 'lh_hover_prefs' in changes) {
         loadPreferences();
@@ -53,9 +53,9 @@
     <div class="section-header">
       <h2>Hover Preferences</h2>
       <div class="actions">
-        <button class="icon-btn" on:click={loadPreferences} title="Refresh">&#8635;</button>
+        <Button variant="ghost" size="icon-sm" onclick={loadPreferences} title="Refresh">&#8635;</Button>
         {#if preferences.length > 0}
-          <button class="icon-btn danger" on:click={clearPreferences} title="Clear data">&#128465;</button>
+          <Button variant="ghost" size="icon-sm" onclick={clearPreferences} title="Clear data">&#128465;</Button>
         {/if}
       </div>
     </div>
@@ -94,10 +94,6 @@
 </div>
 
 <style>
-  :global(*, *::before, *::after) {
-    box-sizing: border-box;
-  }
-
   .container {
     min-height: 100vh;
     padding: 20px 16px;
@@ -145,26 +141,6 @@
   .actions {
     display: flex;
     gap: 6px;
-  }
-
-  .icon-btn {
-    background: rgba(255, 255, 255, 0.15);
-    border: 1px solid rgba(255, 255, 255, 0.3);
-    color: white;
-    border-radius: 6px;
-    padding: 4px 8px;
-    cursor: pointer;
-    font-size: 1rem;
-    line-height: 1;
-    transition: background 0.15s;
-  }
-
-  .icon-btn:hover {
-    background: rgba(255, 255, 255, 0.25);
-  }
-
-  .icon-btn.danger:hover {
-    background: rgba(220, 50, 50, 0.5);
   }
 
   .hint {
