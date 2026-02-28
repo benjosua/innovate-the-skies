@@ -224,6 +224,10 @@
   function formatTs(ts: number) {
     return new Date(ts).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
   }
+
+  function bookOnLufthansa() {
+    chrome.tabs.create({ url: 'https://www.lufthansa.com/de/en/booking/new' });
+  }
 </script>
 
 <div class="flex h-screen flex-col overflow-hidden bg-gray-50">
@@ -775,6 +779,7 @@
 
       <!-- Book CTA -->
       <button
+        onclick={bookOnLufthansa}
         class="w-full rounded-2xl bg-[#ffaa00] py-4 text-sm font-bold text-[#05164d] shadow-lg transition-all hover:bg-[#e69900] active:scale-[0.98] flex items-center justify-center gap-2"
       >
         <Plane class="h-4 w-4" />
