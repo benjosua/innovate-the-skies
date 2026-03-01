@@ -1,8 +1,8 @@
+> Built and won 3rd place 🥉 during **Hamburg Hackathon: Innovate the Skies & Beyond** by [Social Developers Club](https://socialdevelopersclub.de/)
+
 # Innovate the Skies
 
 ![banner](banner.png)
-
-> Built during **Hamburg Hackathon: Innovate the Skies & Beyond** by [Social Developers Club](https://socialdevelopersclub.de/)
 
 A prototype demonstrating personalized, intent-driven travel discovery for Lufthansa customers. Built as a Chrome side panel extension to validate the concept end-to-end — the interaction patterns, AI pipeline, and booking flow are designed to be embedded directly into Lufthansa's web properties and native apps once real user analytics infrastructure is in place.
 
